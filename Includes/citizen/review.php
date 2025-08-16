@@ -53,7 +53,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             if ($upload_ok) {
                 if (move_uploaded_file($before_file['tmp_name'], $before_path) && move_uploaded_file($after_file['tmp_name'], $after_path)) {
-                    // Insert into database
+                    //Insert the database 
                     $stmt = $conn->prepare("INSERT INTO reviews (user_id, ref_number, before_image, after_image, review_text) VALUES (?, ?, ?, ?, ?)");
                     $stmt->bind_param("issss", $user_id, $ref_number, $before_path, $after_path, $review_text);
 

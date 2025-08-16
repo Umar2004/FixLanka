@@ -15,27 +15,95 @@ $current_page = basename($_SERVER['PHP_SELF']);
 // Handle user deletion
 if (isset($_POST['delete_user'])) {
     $user_id = $_POST['user_id'];
+    
+    // Prevent admin from deleting themselves
+    if ($user_id == $_SESSION['user_id']) {
+        $_SESSION['message'] = [
+            'type' => 'warning', 
+            'text' => 'You cannot delete your own admin account.'
+        ];
+        header("Location: admin_dashboard.php");
+        exit();
+    }
+    
+    try {
+        // Start transaction for data consistency
+        $conn->begin_transaction();
+        
+        // Get user info before deletion for the success message
+        $sql = "SELECT name, email FROM users WHERE user_id = ?";
+        $stmt = $conn->prepare($sql);
+        $stmt->bind_param("i", $user_id);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        $user_info = $result->fetch_assoc();
+        $stmt->close();
+        
+        if (!$user_info) {
+            throw new Exception("User not found.");
+        }
 
-    // First, delete reviews by this user
-    $sql = "DELETE FROM reviews WHERE user_id = ?";
-    $stmt = $conn->prepare($sql);
-    $stmt->bind_param("i", $user_id);
-    $stmt->execute();
-    $stmt->close();
+        // First, delete password reset requests by this user
+        $sql = "DELETE FROM password_reset_requests WHERE user_id = ?";
+        $stmt = $conn->prepare($sql);
+        $stmt->bind_param("i", $user_id);
+        $stmt->execute();
+        $password_requests_deleted = $stmt->affected_rows;
+        $stmt->close();
 
-    // Then, delete complaints by this user
-    $sql = "DELETE FROM complaints WHERE user_id = ?";
-    $stmt = $conn->prepare($sql);
-    $stmt->bind_param("i", $user_id);
-    $stmt->execute();
-    $stmt->close();
+        // Then, delete reviews by this user
+        $sql = "DELETE FROM reviews WHERE user_id = ?";
+        $stmt = $conn->prepare($sql);
+        $stmt->bind_param("i", $user_id);
+        $stmt->execute();
+        $reviews_deleted = $stmt->affected_rows;
+        $stmt->close();
 
-    // Now, delete the user
-    $sql = "DELETE FROM users WHERE user_id = ?";
-    $stmt = $conn->prepare($sql);
-    $stmt->bind_param("i", $user_id);
-    $stmt->execute();
-    $stmt->close();
+        // Then, delete complaints by this user
+        $sql = "DELETE FROM complaints WHERE user_id = ?";
+        $stmt = $conn->prepare($sql);
+        $stmt->bind_param("i", $user_id);
+        $stmt->execute();
+        $complaints_deleted = $stmt->affected_rows;
+        $stmt->close();
+
+        // Now, delete the user
+        $sql = "DELETE FROM users WHERE user_id = ?";
+        $stmt = $conn->prepare($sql);
+        $stmt->bind_param("i", $user_id);
+        $stmt->execute();
+        
+        if ($stmt->affected_rows > 0) {
+            // Commit transaction
+            $conn->commit();
+            
+            // Set success message
+            $_SESSION['message'] = [
+                'type' => 'success', 
+                'text' => "User '{$user_info['name']}' ({$user_info['email']}) has been successfully deleted along with {$complaints_deleted} complaints, {$reviews_deleted} reviews, and {$password_requests_deleted} password reset requests."
+            ];
+        } else {
+            throw new Exception("Failed to delete user. User may not exist.");
+        }
+        $stmt->close();
+        
+    } catch (Exception $e) {
+        // Rollback transaction on error
+        $conn->rollback();
+        
+        // Log detailed error for debugging
+        error_log("User deletion failed for user_id: $user_id. Error: " . $e->getMessage());
+        error_log("MySQL Error: " . $conn->error);
+        
+        $_SESSION['message'] = [
+            'type' => 'danger', 
+            'text' => 'Error deleting user: ' . $e->getMessage() . ' (Check error logs for details)'
+        ];
+    }
+    
+    // Redirect to prevent form resubmission and show updated data
+    header("Location: admin_dashboard.php");
+    exit();
 }
 
 // Handle department deletion
@@ -144,8 +212,26 @@ $dept_result = $conn->query($dept_sql);
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <link rel="stylesheet" href="admin.css">
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 </head>
 <body>
+    <!-- SweetAlert Messages -->
+    <?php if (isset($_SESSION['message'])): ?>
+        <script>
+            document.addEventListener('DOMContentLoaded', function() {
+                Swal.fire({
+                    title: '<?php echo $_SESSION['message']['type'] === 'success' ? 'Success!' : ($_SESSION['message']['type'] === 'danger' ? 'Error!' : 'Notice'); ?>',
+                    text: '<?php echo addslashes($_SESSION['message']['text']); ?>',
+                    icon: '<?php echo $_SESSION['message']['type'] === 'success' ? 'success' : ($_SESSION['message']['type'] === 'danger' ? 'error' : ($_SESSION['message']['type'] === 'warning' ? 'warning' : 'info')); ?>',
+                    confirmButtonColor: '#00bfff',
+                    timer: <?php echo $_SESSION['message']['type'] === 'success' ? '3000' : '0'; ?>,
+                    timerProgressBar: <?php echo $_SESSION['message']['type'] === 'success' ? 'true' : 'false'; ?>
+                });
+            });
+        </script>
+        <?php unset($_SESSION['message']); ?>
+    <?php endif; ?>
+
     <!-- Navigation -->
     <nav class="navbar navbar-expand-lg navbar-dark">
         <div class="container">
@@ -238,19 +324,43 @@ $dept_result = $conn->query($dept_sql);
                                 <td><?php echo $user['user_id']; ?></td>
                                 <td>
                                     <div class="d-flex align-items-center">
-                                        <?php if($user['profile_picture']): ?>
+                                        <?php if(!empty($user['profile_picture'])): ?>
                                             <?php 
                                             // Handle profile picture path for admin dashboard
                                             $adminProfilePath = $user['profile_picture'];
-                                            if (strpos($adminProfilePath, 'Includes/citizen/') === 0) {
-                                                $adminProfilePath = '../citizen/' . str_replace('Includes/citizen/', '', $adminProfilePath);
-                                            } elseif (strpos($adminProfilePath, 'uploads/') === 0) {
-                                                $adminProfilePath = '../citizen/' . $adminProfilePath;
+                                            
+                                            // Handle profile picture path resolution for admin dashboard
+                                            // NEW: Profile pictures stored in: Includes/citizen/uploads/profilepics/
+                                            // OLD: Profile pictures stored in: Includes/citizen/uploads/
+                                            // Database stores full path, Admin needs: "../../" + database_path
+                                            
+                                            // Convert database path to web-accessible path from admin perspective
+                                            if (strpos($adminProfilePath, 'Includes/citizen/uploads/profilepics/') === 0) {
+                                                // New format: Includes/citizen/uploads/profilepics/filename.jpg
+                                                $adminProfilePath = '../../' . $adminProfilePath;
+                                            } elseif (strpos($adminProfilePath, 'Includes/citizen/uploads/') === 0) {
+                                                // Old format: Includes/citizen/uploads/filename.jpg
+                                                $adminProfilePath = '../../' . $adminProfilePath;
+                                            } elseif (strpos($adminProfilePath, 'Includes/citizen/') === 0) {
+                                                // General format: Includes/citizen/uploads/filename.jpg
+                                                $adminProfilePath = '../../' . $adminProfilePath;
                                             } elseif (strpos($adminProfilePath, '/') === false) {
-                                                $adminProfilePath = '../citizen/uploads/' . $adminProfilePath;
+                                                // Just filename: filename.jpg (assume it's in new profilepics folder)
+                                                $adminProfilePath = '../../Includes/citizen/uploads/profilepics/' . $adminProfilePath;
+                                            } else {
+                                                // Use path as is if it doesn't match any pattern
+                                                $adminProfilePath = $user['profile_picture'];
                                             }
                                             ?>
-                                            <img src="<?php echo htmlspecialchars($adminProfilePath); ?>" class="profile-image me-2" alt="Profile">
+                                            <img src="<?php echo htmlspecialchars($adminProfilePath); ?>" 
+                                                 class="profile-image me-2" 
+                                                 alt="<?php echo htmlspecialchars($user['name']); ?>'s Profile"
+                                                 onerror="this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzAiIGhlaWdodD0iMzAiIHZpZXdCb3g9IjAgMCAzMCAzMCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPGNpcmNsZSBjeD0iMTUiIGN5PSIxNSIgcj0iMTUiIGZpbGw9IiNlOWVjZWYiLz4KPHN2ZyB4PSI3LjUiIHk9IjcuNSIgd2lkdGg9IjE1IiBoZWlnaHQ9IjE1IiB2aWV3Qm94PSIwIDAgMjQgMjQiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzZjNzU3ZCIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPgo8cGF0aCBkPSJtMjAgMjEtMi0yLTItMiIvPgo8cGF0aCBkPSJtMTcgMTctNS01LTUtNSIvPgo8Y2lyY2xlIGN4PSI5IiBjeT0iOSIgcj0iMiIvPgo8L3N2Zz4KPC9zdmc+'; this.title='Profile picture not found';">
+                                        <?php else: ?>
+                                            <!-- Default avatar for users without profile pictures -->
+                                            <div class="profile-image me-2 bg-secondary d-flex align-items-center justify-content-center" style="width: 30px; height: 30px; border-radius: 50%; color: white; font-size: 12px; font-weight: bold;">
+                                                <?php echo strtoupper(substr($user['name'], 0, 1)); ?>
+                                            </div>
                                         <?php endif; ?>
                                         <?php echo htmlspecialchars($user['name']); ?>
                                     </div>
@@ -281,10 +391,7 @@ $dept_result = $conn->query($dept_sql);
                                         <?php if ($user['role'] === 'department'): ?>
                                             <button type="button" class="btn btn-secondary btn-sm change-password-btn" data-bs-toggle="modal" data-bs-target="#changePasswordModal" data-user-id="<?php echo $user['user_id']; ?>">Change Password</button>
                                         <?php endif; ?>
-                                        <form method="POST" onsubmit="return confirm('Are you sure you want to delete this user?');">
-                                            <input type="hidden" name="user_id" value="<?php echo $user['user_id']; ?>">
-                                            <button type="submit" name="delete_user" class="btn btn-danger btn-sm">Delete</button>
-                                        </form>
+                                        <button type="button" class="btn btn-danger btn-sm" onclick="deleteUser(<?php echo $user['user_id']; ?>, '<?php echo htmlspecialchars($user['name']); ?>')">Delete</button>
                                     </div>
                                 </td>
                             </tr>
@@ -354,10 +461,7 @@ $dept_result = $conn->query($dept_sql);
                                     <div class="action-buttons">
                                         <button type="submit" name="update_department" class="btn btn-primary btn-sm">Update</button>
                                     </form>
-                                    <form method="POST" onsubmit="return confirm('Are you sure you want to delete this department?');">
-                                        <input type="hidden" name="dept_id" value="<?php echo $dept['dept_id']; ?>">
-                                        <button type="submit" name="delete_department" class="btn btn-danger btn-sm">Delete</button>
-                                    </form>
+                                    <button type="button" class="btn btn-danger btn-sm" onclick="deleteDepartment(<?php echo $dept['dept_id']; ?>, '<?php echo htmlspecialchars($dept['dept_name']); ?>')">Delete</button>
                                     </div>
                                 </td>
                             </tr>
@@ -401,16 +505,113 @@ $dept_result = $conn->query($dept_sql);
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        // Add confirmation for delete actions
-        document.querySelectorAll('form').forEach(form => {
-            form.addEventListener('submit', function(e) {
-                if (this.querySelector('button[type="submit"]').classList.contains('btn-danger')) {
-                    if (!confirm('Are you sure you want to delete this item?')) {
-                        e.preventDefault();
-                    }
+        // SweetAlert confirmation for user deletion (button click approach)
+        function deleteUser(userId, userName) {
+            Swal.fire({
+                title: 'Delete User?',
+                html: `Are you sure you want to delete user <strong>${userName}</strong>?<br><br><small class="text-danger">This will also delete all their complaints and reviews. This action cannot be undone.</small>`,
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#dc3545',
+                cancelButtonColor: '#6c757d',
+                confirmButtonText: 'Yes, Delete User!',
+                cancelButtonText: 'Cancel',
+                reverseButtons: true,
+                focusCancel: true
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    // Show loading state
+                    Swal.fire({
+                        title: 'Deleting User...',
+                        text: 'Please wait while we delete the user and their data.',
+                        allowOutsideClick: false,
+                        allowEscapeKey: false,
+                        showConfirmButton: false,
+                        didOpen: () => {
+                            Swal.showLoading();
+                        }
+                    });
+                    
+                    // Create and submit form programmatically
+                    const form = document.createElement('form');
+                    form.method = 'POST';
+                    form.action = '';
+                    
+                    // Add user_id input
+                    const userIdInput = document.createElement('input');
+                    userIdInput.type = 'hidden';
+                    userIdInput.name = 'user_id';
+                    userIdInput.value = userId;
+                    form.appendChild(userIdInput);
+                    
+                    // Add delete_user input
+                    const deleteInput = document.createElement('input');
+                    deleteInput.type = 'hidden';
+                    deleteInput.name = 'delete_user';
+                    deleteInput.value = '1';
+                    form.appendChild(deleteInput);
+                    
+                    // Add to page and submit
+                    document.body.appendChild(form);
+                    console.log('Submitting user deletion for ID:', userId);
+                    form.submit();
                 }
             });
-        });
+        }
+
+        // SweetAlert confirmation for department deletion (button click approach)
+        function deleteDepartment(deptId, deptName) {
+            Swal.fire({
+                title: 'Delete Department?',
+                html: `Are you sure you want to delete the <strong>${deptName}</strong> department?<br><br><small class="text-warning">This will unassign all complaints from this department. This action cannot be undone.</small>`,
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#dc3545',
+                cancelButtonColor: '#6c757d',
+                confirmButtonText: 'Yes, Delete Department!',
+                cancelButtonText: 'Cancel',
+                reverseButtons: true,
+                focusCancel: true
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    // Show loading state
+                    Swal.fire({
+                        title: 'Deleting Department...',
+                        text: 'Please wait while we delete the department.',
+                        allowOutsideClick: false,
+                        allowEscapeKey: false,
+                        showConfirmButton: false,
+                        didOpen: () => {
+                            Swal.showLoading();
+                        }
+                    });
+                    
+                    // Create and submit form programmatically
+                    const form = document.createElement('form');
+                    form.method = 'POST';
+                    form.action = '';
+                    
+                    // Add dept_id input
+                    const deptIdInput = document.createElement('input');
+                    deptIdInput.type = 'hidden';
+                    deptIdInput.name = 'dept_id';
+                    deptIdInput.value = deptId;
+                    form.appendChild(deptIdInput);
+                    
+                    // Add delete_department input
+                    const deleteInput = document.createElement('input');
+                    deleteInput.type = 'hidden';
+                    deleteInput.name = 'delete_department';
+                    deleteInput.value = '1';
+                    form.appendChild(deleteInput);
+                    
+                    // Add to page and submit
+                    document.body.appendChild(form);
+                    console.log('Submitting department deletion for ID:', deptId);
+                    form.submit();
+                }
+            });
+        }
 
         // Handle change password modal
         const changePasswordModal = document.getElementById('changePasswordModal');
@@ -430,8 +631,33 @@ $dept_result = $conn->query($dept_sql);
             if (newPasswordInput.value !== confirmPasswordInput.value) {
                 confirmPasswordInput.classList.add('is-invalid');
                 event.preventDefault(); // Prevent form submission
+                Swal.fire({
+                    title: 'Password Mismatch!',
+                    text: 'The password and confirm password fields do not match. Please check and try again.',
+                    icon: 'error',
+                    confirmButtonColor: '#00bfff'
+                });
+            } else if (newPasswordInput.value.length < 6) {
+                event.preventDefault();
+                Swal.fire({
+                    title: 'Password Too Short!',
+                    text: 'Password must be at least 6 characters long.',
+                    icon: 'warning',
+                    confirmButtonColor: '#00bfff'
+                });
             } else {
                 confirmPasswordInput.classList.remove('is-invalid');
+                // Show loading state
+                Swal.fire({
+                    title: 'Updating Password...',
+                    text: 'Please wait while we update the password.',
+                    allowOutsideClick: false,
+                    allowEscapeKey: false,
+                    showConfirmButton: false,
+                    didOpen: () => {
+                        Swal.showLoading();
+                    }
+                });
             }
         });
 

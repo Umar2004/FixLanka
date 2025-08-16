@@ -17,6 +17,8 @@ if (isset($_SESSION['user_id'])) {
             if (!empty($user['profile_picture'])) {
                 // Use the path exactly as stored in database
                 $userProfilePic = $user['profile_picture'];
+                // Debug: Show what path we're using
+                // echo "<!-- Homepage profile pic path: " . htmlspecialchars($userProfilePic) . " -->";
             }
         }
         $stmt_user->close();
@@ -71,101 +73,6 @@ if (isset($_SESSION['message'])) {
   <script src="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.js"></script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.css"/>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
-  <style>
-    /* Profile Picture Modal Styles */
-    .profile-modal {
-      display: none;
-      position: fixed;
-      z-index: 9999;
-      left: 0;
-      top: 0;
-      width: 100%;
-      height: 100%;
-      background-color: rgba(0, 0, 0, 0.8);
-      animation: fadeIn 0.3s ease-in-out;
-    }
-
-    .profile-modal.show {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-
-    .profile-modal-content {
-      position: relative;
-      background: white;
-      padding: 20px;
-      border-radius: 15px;
-      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
-      max-width: 500px;
-      max-height: 80vh;
-      animation: slideIn 0.3s ease-in-out;
-    }
-
-    .profile-modal-image {
-      width: 100%;
-      height: auto;
-      max-width: 400px;
-      max-height: 400px;
-      border-radius: 10px;
-      object-fit: cover;
-      display: block;
-      margin: 0 auto;
-    }
-
-    .profile-modal-close {
-      position: absolute;
-      top: 10px;
-      right: 15px;
-      color: #aaa;
-      font-size: 28px;
-      font-weight: bold;
-      cursor: pointer;
-      transition: color 0.3s;
-    }
-
-    .profile-modal-close:hover,
-    .profile-modal-close:focus {
-      color: #000;
-    }
-
-    .nav-profile-pic {
-      cursor: pointer;
-      transition: transform 0.2s ease-in-out;
-    }
-
-    .nav-profile-pic:hover {
-      transform: scale(1.1);
-    }
-
-    @keyframes fadeIn {
-      from { opacity: 0; }
-      to { opacity: 1; }
-    }
-
-    @keyframes slideIn {
-      from { 
-        opacity: 0;
-        transform: scale(0.7) translateY(-50px);
-      }
-      to { 
-        opacity: 1;
-        transform: scale(1) translateY(0);
-      }
-    }
-
-    @media (max-width: 768px) {
-      .profile-modal-content {
-        margin: 20px;
-        max-width: calc(100% - 40px);
-      }
-      
-      .profile-modal-image {
-        max-width: 300px;
-        max-height: 300px;
-      }
-    }
-  </style>
 </head>
 <body>
   <!-- Navbar -->
@@ -269,6 +176,8 @@ if (isset($_SESSION['message'])) {
               while ($row = $result->fetch_assoc()) {
                   // Use profile picture path as stored in database
                   $profilePic = !empty($row['profile_picture']) ? $row['profile_picture'] : '';
+                  // Debug: Show review profile pic path
+                  // echo "<!-- Review profile pic path: " . htmlspecialchars($profilePic) . " -->";
                   echo '<div class="swiper-slide review-card">';
                   echo '<div class="review-header">';
                   if (!empty($profilePic)) {

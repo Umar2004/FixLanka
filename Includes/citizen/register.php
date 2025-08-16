@@ -13,7 +13,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // Handle profile picture
     $pic_name = $_FILES['profile_pic']['name'];
     $pic_tmp = $_FILES['profile_pic']['tmp_name'];
-    $upload_dir = __DIR__ . '/uploads/';
+    $upload_dir = __DIR__ . '/uploads/profilepics/';
     if (!is_dir($upload_dir)) {
         mkdir($upload_dir, 0755, true);
     }
@@ -23,7 +23,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $unique_filename = 'profile_' . uniqid() . '.' . $file_extension;
     
     // Store path relative to website root for proper web access
-    $upload_path = "Includes/citizen/uploads/" . $unique_filename;
+    $upload_path = "Includes/citizen/uploads/profilepics/" . $unique_filename;
     move_uploaded_file($pic_tmp, $upload_dir . $unique_filename);
 
     // Default role = citizen
