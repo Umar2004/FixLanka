@@ -282,82 +282,9 @@ while ($row = $result->fetch_assoc()) {
       crossorigin=""/>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
       crossorigin=""></script>
-    <style>
-        /* Image Modal Styles */
-        .image-modal {
-            display: none;
-            position: fixed;
-            z-index: 9999;
-            left: 0;
-            top: 0;
-            width: 100%;
-            height: 100%;
-            background-color: rgba(0, 0, 0, 0.8);
-            animation: fadeIn 0.3s ease-in-out;
-        }
 
-        .image-modal.show {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .image-modal-content {
-            position: relative;
-            background: white;
-            padding: 20px;
-            border-radius: 15px;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
-            max-width: 80vw;
-            max-height: 80vh;
-            animation: slideIn 0.3s ease-in-out;
-        }
-
-        .image-modal-image {
-            width: 100%;
-            height: auto;
-            max-width: 600px;
-            max-height: 500px;
-            border-radius: 10px;
-            object-fit: contain;
-            display: block;
-            margin: 0 auto;
-        }
-
-        .image-modal-close {
-            position: absolute;
-            top: 10px;
-            right: 15px;
-            color: #aaa;
-            font-size: 28px;
-            font-weight: bold;
-            cursor: pointer;
-            transition: color 0.3s;
-        }
-
-        .image-modal-close:hover,
-        .image-modal-close:focus {
-            color: #000;
-        }
-
-        @keyframes fadeIn {
-            from { opacity: 0; }
-            to { opacity: 1; }
-        }
-
-        @keyframes slideIn {
-            from { 
-                opacity: 0;
-                transform: scale(0.7) translateY(-50px);
-            }
-            to { 
-                opacity: 1;
-                transform: scale(1) translateY(0);
-            }
-        }
-    </style>
 </head>
-<body>
+<body class="department-dashboard">
     <div class="container">
         <!-- Dashboard Header -->
         <div class="dashboard-header">
